@@ -706,6 +706,7 @@ int tscBuildQueryMsg(SSqlObj *pSql, SSqlInfo *pInfo) {
   pQueryMsg->slidingTimeUnit = pQueryInfo->slidingTimeUnit;
   pQueryMsg->numOfGroupCols = htons(pQueryInfo->groupbyExpr.numOfGroupCols);
 
+  pQueryMsg->tagNameRelType = htons(pQueryInfo->tagCond.relType);
   pQueryMsg->queryType = htons(pQueryInfo->type);
   pQueryMsg->numOfOutputCols = htons(pQueryInfo->exprsInfo.numOfExprs);
 
@@ -891,6 +892,14 @@ int tscBuildQueryMsg(SSqlObj *pSql, SSqlInfo *pInfo) {
     }
   }
   
+  if (pQueryInfo->tagCond.tbnameCond.cond == NULL) {
+    *pMsg = 0;
+    pMsg++;
+  } else {
+    strcpy(pMsg, pQueryInfo->tagCond.tbnameCond.cond);
+    pMsg += strlen(pQueryInfo->tagCond.tbnameCond.cond) + 1;
+  }
+
   // tbname in/like query expression should be sent to mgmt node
   msgLen = pMsg - pStart;
 

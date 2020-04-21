@@ -5133,7 +5133,7 @@ static char* createTableIdList(SQueryTableMsg* pQueryMsg, char* pMsg, SArray** p
  * @return
  */
 static int32_t convertQueryMsg(SQueryTableMsg *pQueryMsg, SArray **pTableIdList, SSqlFuncExprMsg ***pExpr,
-      char** tagCond, SColIndex** groupbyCols) {
+      char** tagCond, char** tbnameCond, SColIndex** groupbyCols) {
   pQueryMsg->numOfTables   = htonl(pQueryMsg->numOfTables);
 
   pQueryMsg->window.skey   = htobe64(pQueryMsg->window.skey);
@@ -5146,6 +5146,7 @@ static int32_t convertQueryMsg(SQueryTableMsg *pQueryMsg, SArray **pTableIdList,
   pQueryMsg->order         = htons(pQueryMsg->order);
   pQueryMsg->orderColId    = htons(pQueryMsg->orderColId);
   pQueryMsg->queryType     = htons(pQueryMsg->queryType);
+  pQueryMsg->tagNameRelType = htons(pQueryMsg->tagNameRelType);
 
   pQueryMsg->numOfCols     = htons(pQueryMsg->numOfCols);
   pQueryMsg->numOfOutputCols = htons(pQueryMsg->numOfOutputCols);
@@ -5294,6 +5295,12 @@ static int32_t convertQueryMsg(SQueryTableMsg *pQueryMsg, SArray **pTableIdList,
     memcpy(*tagCond, pMsg, pQueryMsg->tagCondLen);
   }
   
+  if (*pMsg != 0) {
+    size_t len = strlen(pMsg);
+    *tbnameCond = malloc(len + 1);
+    strcpy(*tbnameCond, pMsg);
+  }
+
   qTrace("qmsg:%p query on %d table(s), qrange:%" PRId64 "-%" PRId64 ", numOfGroupbyTagCols:%d, ts order:%d, "
          "outputCols:%d, numOfCols:%d, interval:%d" PRId64 ", fillType:%d, comptsLen:%d, limit:%" PRId64 ", offset:%" PRId64,
          pQueryMsg, pQueryMsg->numOfTables, pQueryMsg->window.skey, pQueryMsg->window.ekey,
@@ -5886,12 +5893,12 @@ int32_t qCreateQueryInfo(void* tsdb, SQueryTableMsg *pQueryMsg, qinfo_t *pQInfo)
 
   int32_t code = TSDB_CODE_SUCCESS;
   
-  char* tagCond = NULL;
+  char* tagCond = NULL, *tbnameCond = NULL;
   SArray *pTableIdList = NULL;
   SSqlFuncExprMsg** pExprMsg = NULL;
   SColIndex* pGroupColIndex = NULL;
   
-  if ((code = convertQueryMsg(pQueryMsg, &pTableIdList, &pExprMsg, &tagCond, &pGroupColIndex)) != TSDB_CODE_SUCCESS) {
+  if ((code = convertQueryMsg(pQueryMsg, &pTableIdList, &pExprMsg, &tagCond, &tbnameCond, &pGroupColIndex)) != TSDB_CODE_SUCCESS) {
     return code;
   }
 
@@ -5927,7 +5934,7 @@ int32_t qCreateQueryInfo(void* tsdb, SQueryTableMsg *pQueryMsg, qinfo_t *pQInfo)
     STableId* id = taosArrayGet(pTableIdList, 0);
     id->uid = -1;  //todo fix me
     
-    /*int32_t ret =*/ tsdbQueryByTagsCond(tsdb, id->uid, tagCond, pQueryMsg->tagCondLen, &groupInfo, pGroupColIndex, pQueryMsg->numOfGroupCols);
+    /*int32_t ret =*/ tsdbQueryByTagsCond(tsdb, id->uid, tagCond, pQueryMsg->tagCondLen, pQueryMsg->tagNameRelType, tbnameCond, &groupInfo, pGroupColIndex, pQueryMsg->numOfGroupCols);
     if (groupInfo.numOfTables == 0) { // no qualified tables no need to do query
       code = TSDB_CODE_SUCCESS;
       goto _query_over;
@@ -5949,6 +5956,8 @@ int32_t qCreateQueryInfo(void* tsdb, SQueryTableMsg *pQueryMsg, qinfo_t *pQInfo)
   code = initQInfo(pQueryMsg, tsdb, *pQInfo, isSTableQuery);
   
 _query_over:
+  tfree(tagCond);
+  tfree(tbnameCond);
   taosArrayDestroy(pTableIdList);
 
   // if failed to add ref for all meters in this query, abort current query
